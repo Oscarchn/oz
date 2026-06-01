@@ -5593,7 +5593,7 @@ func (e *Engine) buildReplyFooter(agent Agent, session AgentSession, workspaceDi
 
 	model := replyFooterModel(session, agent)
 	if footer := e.statuslineFooterText(model); footer != "" {
-		return footer
+		return "> " + footer
 	}
 
 	var parts []string
@@ -5727,7 +5727,17 @@ func formatStatuslineQuota(q *statuslineQuotaPayload, model string) string {
 	bar := strings.Repeat("\u2764\ufe0f", filled) + strings.Repeat("\U0001f90d", 10-filled)
 	model = strings.TrimSpace(model)
 	if model == "" {
-		model = "unknown"
+		return fmt.Sprintf("%s%s  %s%.2f/%s%.0f  %s%s%s",
+			"\u2728",
+			bar,
+			"\U0001f4b2",
+			q.Data.UsedUSD,
+			"\U0001f4b2",
+			math.Trunc(q.Data.LimitUSD),
+			"\U0001f504",
+			statuslineResetRemaining(q.Data.ResetAt),
+			"\u2728",
+		)
 	}
 	return fmt.Sprintf("%s%s  %s%.2f/%s%.0f  %s%s  %s%s%s",
 		"\u2728",
@@ -5984,7 +5994,13 @@ func appendReplyFooter(content, footer string) string {
 	}
 	slog.Debug("appendReplyFooter", "content_len", len(content), "footer", footer, "content_last30", last30)
 	if content == "" {
+		if strings.HasPrefix(strings.TrimSpace(footer), ">") {
+			return footer
+		}
 		return "*" + footer + "*"
+	}
+	if strings.HasPrefix(strings.TrimSpace(footer), ">") {
+		return content + "\n\n" + footer
 	}
 	return content + "\n\n*" + footer + "*"
 }

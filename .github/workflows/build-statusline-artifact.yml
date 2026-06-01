@@ -21,7 +21,7 @@ jobs:
       - name: Format and test touched packages
         run: |
           gofmt -w cmd/cc-connect/main.go config/config.go core/engine.go core/engine_test.go
-          go test ./config ./core -run 'TestProcessInteractiveEvents_AppendsStatuslineFooterWhenConfigured|TestProcessInteractiveEvents_AppendsReplyFooterWhenEnabled'
+          go test ./config ./core -run 'TestProcessInteractiveEvents_(AppendsStatuslineFooterWhenConfigured|StatuslineFooterOmitsUnknownModel|AppendsReplyFooterWhenEnabled)'
 
       - name: Build Windows executable
         run: |
