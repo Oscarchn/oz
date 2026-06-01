@@ -279,6 +279,7 @@ func main() {
 		_, _, _, _, _, showCtx, showFooter := config.EffectiveDisplay(cfg, &proj)
 		engine.SetShowContextIndicator(showCtx)
 		engine.SetReplyFooterEnabled(showFooter)
+		engine.SetStatuslineFooterConfig(toCoreStatuslineFooterConfig(config.EffectiveStatuslineFooter(cfg, &proj)))
 		engine.SetAttachmentSendEnabled(cfg.AttachmentSend != "off")
 		engine.SetFilterExternalSessions(proj.FilterExternalSessions != nil && *proj.FilterExternalSessions)
 		engine.SetBaseWorkDir(workDir)
@@ -1464,6 +1465,7 @@ func reloadConfig(configPath, projName string, engine *core.Engine) (*core.Confi
 	// Wire show_context_indicator and reply_footer from display config
 	engine.SetShowContextIndicator(showCtx)
 	engine.SetReplyFooterEnabled(showFooter)
+	engine.SetStatuslineFooterConfig(toCoreStatuslineFooterConfig(config.EffectiveStatuslineFooter(cfg, proj)))
 
 	// Reload auto-compress settings
 	if proj.AutoCompress.Enabled != nil && *proj.AutoCompress.Enabled {
@@ -1757,6 +1759,26 @@ func buildHeartbeatConfig(hc config.HeartbeatConfig) core.HeartbeatConfig {
 		cfg.TimeoutMins = *hc.TimeoutMins
 	}
 	return cfg
+}
+
+func toCoreStatuslineFooterConfig(c config.StatuslineFooterConfig) core.StatuslineFooterCfg {
+	enabled := c.Enabled != nil && *c.Enabled
+	timeout := 1500 * time.Millisecond
+	if c.TimeoutMs != nil && *c.TimeoutMs > 0 {
+		timeout = time.Duration(*c.TimeoutMs) * time.Millisecond
+	}
+	cacheTTL := 30 * time.Second
+	if c.CacheSecs != nil && *c.CacheSecs > 0 {
+		cacheTTL = time.Duration(*c.CacheSecs) * time.Second
+	}
+	return core.StatuslineFooterCfg{
+		Enabled:  enabled,
+		URL:      c.URL,
+		Token:    c.Token,
+		TokenEnv: c.TokenEnv,
+		Timeout:  timeout,
+		CacheTTL: cacheTTL,
+	}
 }
 
 func derefInt(v *int) int {

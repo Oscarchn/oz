@@ -99,6 +99,7 @@ type Config struct {
 	Speech             SpeechConfig            `toml:"speech"`
 	TTS                TTSConfig               `toml:"tts"`
 	Display            DisplayConfig           `toml:"display"`
+	StatuslineFooter   StatuslineFooterConfig  `toml:"statusline_footer"`
 	StreamPreview      StreamPreviewConfig     `toml:"stream_preview"`      // real-time streaming preview
 	InstantReply       InstantReplyConfig      `toml:"instant_reply"`       // immediate confirmation reply
 	RateLimit          RateLimitConfig         `toml:"rate_limit"`          // per-session rate limiting
@@ -184,6 +185,17 @@ type DisplayConfig struct {
 	ToolMessages       *bool   `toml:"tool_messages"`        // whether tool progress messages are shown; default true
 	ShowContextIndicator *bool `toml:"show_context_indicator"` // whether [ctx: ~N%] suffix is shown; default true
 	ReplyFooter        *bool   `toml:"reply_footer"`         // whether Codex-like footer is shown; default true
+}
+
+// StatuslineFooterConfig controls an optional Claude-style quota/model footer
+// appended to assistant replies before platform delivery.
+type StatuslineFooterConfig struct {
+	Enabled   *bool  `toml:"enabled,omitempty"`    // default false
+	URL       string `toml:"url,omitempty"`        // quota endpoint
+	Token     string `toml:"token,omitempty"`      // bearer/api key token
+	TokenEnv  string `toml:"token_env,omitempty"`  // env var fallback for token
+	TimeoutMs *int   `toml:"timeout_ms,omitempty"` // default 1500
+	CacheSecs *int   `toml:"cache_secs,omitempty"` // default 30
 }
 
 // StreamPreviewConfig controls real-time streaming preview in IM.
@@ -366,6 +378,7 @@ type ProjectConfig struct {
 	// ReplyFooter: nil/true = append a Codex-style footer; false = disable.
 	// (model/reasoning/usage/workdir, when available) to assistant replies.
 	ReplyFooter      *bool        `toml:"reply_footer,omitempty"`
+	StatuslineFooter *StatuslineFooterConfig `toml:"statusline_footer,omitempty"`
 	InjectSender     *bool        `toml:"inject_sender,omitempty"`     // prepend sender identity (platform + user ID) to each message sent to the agent
 	DisabledCommands []string     `toml:"disabled_commands,omitempty"` // commands to disable for this project (e.g. ["restart", "upgrade"])
 	AdminFrom        string       `toml:"admin_from,omitempty"`        // comma-separated user IDs allowed to run privileged commands; "*" = all allowed users
@@ -749,6 +762,38 @@ func EffectiveDisplay(cfg *Config, proj *ProjectConfig) (mode string, thinkingMe
 	}
 
 	return
+}
+
+// EffectiveStatuslineFooter resolves project-level statusline footer settings on
+// top of the global [statusline_footer] block.
+func EffectiveStatuslineFooter(cfg *Config, proj *ProjectConfig) StatuslineFooterConfig {
+	if cfg == nil {
+		return StatuslineFooterConfig{}
+	}
+	out := cfg.StatuslineFooter
+	if proj == nil || proj.StatuslineFooter == nil {
+		return out
+	}
+	p := proj.StatuslineFooter
+	if p.Enabled != nil {
+		out.Enabled = p.Enabled
+	}
+	if p.URL != "" {
+		out.URL = p.URL
+	}
+	if p.Token != "" {
+		out.Token = p.Token
+	}
+	if p.TokenEnv != "" {
+		out.TokenEnv = p.TokenEnv
+	}
+	if p.TimeoutMs != nil {
+		out.TimeoutMs = p.TimeoutMs
+	}
+	if p.CacheSecs != nil {
+		out.CacheSecs = p.CacheSecs
+	}
+	return out
 }
 
 // EffectiveCardMode returns the card rendering mode for the project: "rich" (Feishu Card 2.0)

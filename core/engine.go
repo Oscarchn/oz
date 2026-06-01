@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"math"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -71,6 +72,22 @@ type RestartRequest struct {
 }
 
 type replyFooterUsageCache struct {
+	text      string
+	fetchedAt time.Time
+}
+
+// StatuslineFooterCfg controls an optional Claude-style quota/model footer
+// fetched from an external quota endpoint before sending assistant replies.
+type StatuslineFooterCfg struct {
+	Enabled   bool
+	URL       string
+	Token     string
+	TokenEnv  string
+	Timeout   time.Duration
+	CacheTTL  time.Duration
+}
+
+type statuslineFooterCache struct {
 	text      string
 	fetchedAt time.Time
 }
@@ -267,6 +284,8 @@ type Engine struct {
 	stopping            bool
 	replyFooterMu       sync.Mutex
 	replyFooterUsage    replyFooterUsageCache
+	statuslineFooterCfg StatuslineFooterCfg
+	statuslineFooter    statuslineFooterCache
 
 	// /web command callbacks
 	webSetupFunc  func() (port int, token string, needRestart bool, err error)
@@ -614,6 +633,20 @@ func (e *Engine) SetShowContextIndicator(show bool) {
 // footer line with model / reasoning / usage / workdir metadata when available.
 func (e *Engine) SetReplyFooterEnabled(show bool) {
 	e.replyFooterEnabled = show
+}
+
+// SetStatuslineFooterConfig configures an optional external quota/model footer.
+func (e *Engine) SetStatuslineFooterConfig(cfg StatuslineFooterCfg) {
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = replyFooterUsageTimeout
+	}
+	if cfg.CacheTTL <= 0 {
+		cfg.CacheTTL = replyFooterUsageCacheTTL
+	}
+	e.replyFooterMu.Lock()
+	e.statuslineFooterCfg = cfg
+	e.statuslineFooter = statuslineFooterCache{}
+	e.replyFooterMu.Unlock()
 }
 
 // SetFilterExternalSessions controls whether /list, /switch, /delete, etc.
@@ -5558,6 +5591,11 @@ func (e *Engine) buildReplyFooter(agent Agent, session AgentSession, workspaceDi
 		return ""
 	}
 
+	model := replyFooterModel(session, agent)
+	if footer := e.statuslineFooterText(model); footer != "" {
+		return footer
+	}
+
 	var parts []string
 	hasStatus := false
 	contextLeft = strings.TrimSpace(contextLeft)
@@ -5566,7 +5604,7 @@ func (e *Engine) buildReplyFooter(agent Agent, session AgentSession, workspaceDi
 		parts = append(parts, contextLeft)
 		hasStatus = true
 	}
-	if model := replyFooterModel(session, agent); model != "" {
+	if model != "" {
 		parts = append(parts, model)
 		hasStatus = true
 	}
@@ -5590,6 +5628,146 @@ func (e *Engine) buildReplyFooter(agent Agent, session AgentSession, workspaceDi
 		return ""
 	}
 	return strings.Join(parts, " · ")
+}
+
+func (e *Engine) statuslineFooterText(model string) string {
+	e.replyFooterMu.Lock()
+	cfg := e.statuslineFooterCfg
+	cached := e.statuslineFooter
+	e.replyFooterMu.Unlock()
+
+	if !cfg.Enabled {
+		return ""
+	}
+	if !cached.fetchedAt.IsZero() && time.Since(cached.fetchedAt) < cfg.CacheTTL {
+		return cached.text
+	}
+
+	text := ""
+	ctx, cancel := context.WithTimeout(e.ctx, cfg.Timeout)
+	defer cancel()
+	if quota, err := fetchStatuslineQuota(ctx, cfg); err == nil {
+		text = formatStatuslineQuota(quota, model)
+	} else {
+		slog.Debug("statusline footer: fetch failed", "error", err)
+		text = cached.text
+	}
+
+	e.replyFooterMu.Lock()
+	e.statuslineFooter = statuslineFooterCache{text: text, fetchedAt: time.Now()}
+	e.replyFooterMu.Unlock()
+	return text
+}
+
+type statuslineQuotaPayload struct {
+	Success bool `json:"success"`
+	Data    struct {
+		UsedUSD  float64 `json:"usedUsd"`
+		LimitUSD float64 `json:"limitUsd"`
+		Percent  int     `json:"percent"`
+		ResetAt  string  `json:"resetAt"`
+	} `json:"data"`
+}
+
+func fetchStatuslineQuota(ctx context.Context, cfg StatuslineFooterCfg) (*statuslineQuotaPayload, error) {
+	url := strings.TrimSpace(cfg.URL)
+	if url == "" {
+		return nil, fmt.Errorf("statusline footer url is empty")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	token := strings.TrimSpace(cfg.Token)
+	if token == "" && cfg.TokenEnv != "" {
+		token = strings.TrimSpace(os.Getenv(cfg.TokenEnv))
+	}
+	if token != "" {
+		req.Header.Set("x-api-key", token)
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+		return nil, fmt.Errorf("statusline footer endpoint returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	var payload statuslineQuotaPayload
+	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		return nil, err
+	}
+	if !payload.Success {
+		return nil, fmt.Errorf("statusline footer endpoint success=false")
+	}
+	return &payload, nil
+}
+
+func formatStatuslineQuota(q *statuslineQuotaPayload, model string) string {
+	if q == nil {
+		return ""
+	}
+	percent := q.Data.Percent
+	if percent < 0 {
+		percent = 0
+	}
+	if percent > 100 {
+		percent = 100
+	}
+	filled := percent / 10
+	if filled < 0 {
+		filled = 0
+	}
+	if filled > 10 {
+		filled = 10
+	}
+	bar := strings.Repeat("\u2764\ufe0f", filled) + strings.Repeat("\U0001f90d", 10-filled)
+	model = strings.TrimSpace(model)
+	if model == "" {
+		model = "unknown"
+	}
+	return fmt.Sprintf("%s%s  %s%.2f/%s%.0f  %s%s  %s%s%s",
+		"\u2728",
+		bar,
+		"\U0001f4b2",
+		q.Data.UsedUSD,
+		"\U0001f4b2",
+		math.Trunc(q.Data.LimitUSD),
+		"\U0001f504",
+		statuslineResetRemaining(q.Data.ResetAt),
+		"\U0001f4bb",
+		model,
+		"\u2728",
+	)
+}
+
+func statuslineResetRemaining(resetAt string) string {
+	resetAt = strings.TrimSpace(resetAt)
+	if resetAt == "" {
+		return ""
+	}
+	resetTime, err := time.Parse(time.RFC3339, resetAt)
+	if err != nil {
+		return ""
+	}
+	remaining := time.Until(resetTime)
+	if remaining <= 0 {
+		return "0h"
+	}
+	if remaining >= 24*time.Hour {
+		days := int(remaining.Hours()) / 24
+		hours := int(remaining.Hours()) % 24
+		return fmt.Sprintf("%dd%dh", days, hours)
+	}
+	if remaining >= time.Hour {
+		hours := int(remaining.Hours())
+		mins := int(remaining.Minutes()) % 60
+		return fmt.Sprintf("%dh%dm", hours, mins)
+	}
+	return fmt.Sprintf("%dm", int(remaining.Minutes()))
 }
 
 func replyFooterModel(session AgentSession, agent Agent) string {

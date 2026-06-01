@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1104,6 +1106,62 @@ func TestProcessInteractiveEvents_AppendsReplyFooterWhenEnabled(t *testing.T) {
 	want := "answer\n\n*gpt-5.4 · xhigh · 100% left · ~/codes/cc-connect*"
 	if sent[0] != want {
 		t.Fatalf("final reply = %q, want %q", sent[0], want)
+	}
+}
+
+func TestProcessInteractiveEvents_AppendsStatuslineFooterWhenConfigured(t *testing.T) {
+	var gotAPIKey, gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAPIKey = r.Header.Get("x-api-key")
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"usedUsd":2.02,"limitUsd":150,"percent":10,"resetAt":"2000-01-01T00:00:00Z"}}`))
+	}))
+	defer srv.Close()
+
+	agent := &stubReplyFooterAgent{
+		stubModelModeAgent: stubModelModeAgent{model: "glm-5.1-ali"},
+		report: &UsageReport{
+			Buckets: []UsageBucket{{
+				Windows: []UsageWindow{{UsedPercent: 80}},
+			}},
+		},
+	}
+	p := &stubPlatformEngine{n: "telegram"}
+	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
+	e.SetReplyFooterEnabled(true)
+	e.SetStatuslineFooterConfig(StatuslineFooterCfg{
+		Enabled:  true,
+		URL:      srv.URL,
+		Token:    "ada_test",
+		Timeout:  time.Second,
+		CacheTTL: time.Minute,
+	})
+
+	sessionKey := "telegram:user-statusline-footer"
+	session := e.sessions.GetOrCreateActive(sessionKey)
+	agentSession := newControllableSession("s-statusline-footer")
+	state := &interactiveState{
+		agentSession: agentSession,
+		platform:     p,
+		replyCtx:     "ctx-statusline-footer",
+		agent:        agent,
+	}
+	e.interactiveStates[sessionKey] = state
+
+	agentSession.events <- Event{Type: EventResult, Content: "answer", Done: true}
+	e.processInteractiveEvents(state, session, e.sessions, sessionKey, "m-statusline-footer", time.Now(), nil, nil, state.replyCtx)
+
+	sent := p.getSent()
+	if len(sent) != 1 {
+		t.Fatalf("sent = %#v, want one final reply", sent)
+	}
+	want := "answer\n\n*✨❤️🤍🤍🤍🤍🤍🤍🤍🤍🤍  💲2.02/💲150  🔄0h  💻glm-5.1-ali✨*"
+	if sent[0] != want {
+		t.Fatalf("final reply = %q, want %q", sent[0], want)
+	}
+	if gotAPIKey != "ada_test" || gotAuth != "Bearer ada_test" {
+		t.Fatalf("headers = (%q, %q), want token headers", gotAPIKey, gotAuth)
 	}
 }
 
