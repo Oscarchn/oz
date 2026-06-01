@@ -261,3 +261,5 @@ func derefInt(v *int) int {''')
           path: |
             cc-connect/dist/cc-connect.exe
             cc-connect/dist/checksums.txt
+
+# trigger: 2026-06-01T12:22:00Z
