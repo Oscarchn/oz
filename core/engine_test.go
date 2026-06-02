@@ -88,6 +88,20 @@ func (p *stubPlatformEngine) clearSent() {
 	p.mu.Unlock()
 }
 
+type statuslineRecordingPlatform struct {
+	stubPlatformEngine
+	statuslineContents []string
+	statuslines        []StatuslineFooterData
+}
+
+func (p *statuslineRecordingPlatform) SendStatuslineReply(_ context.Context, _ any, content string, statusline StatuslineFooterData) error {
+	p.mu.Lock()
+	p.statuslineContents = append(p.statuslineContents, content)
+	p.statuslines = append(p.statuslines, statusline)
+	p.mu.Unlock()
+	return nil
+}
+
 type recallCheckingPlatform struct {
 	stubPlatformEngine
 	recalled bool
@@ -1156,7 +1170,13 @@ func TestProcessInteractiveEvents_AppendsStatuslineFooterWhenConfigured(t *testi
 	if len(sent) != 1 {
 		t.Fatalf("sent = %#v, want one final reply", sent)
 	}
-	want := "answer\n\n> ✨❤️🤍🤍🤍🤍🤍🤍🤍🤍🤍  💲2.02/💲150  🔄0h  💻glm-5.1-ali✨"
+	want := "answer\n\n" + formatStatuslineFooterText(&StatuslineFooterData{
+		Model:     "glm-5.1-ali",
+		UsedUSD:   2.02,
+		LimitUSD:  150,
+		Percent:   10,
+		Remaining: "0h",
+	})
 	if sent[0] != want {
 		t.Fatalf("final reply = %q, want %q", sent[0], want)
 	}
@@ -1201,7 +1221,12 @@ func TestProcessInteractiveEvents_StatuslineFooterOmitsUnknownModel(t *testing.T
 	if len(sent) != 1 {
 		t.Fatalf("sent = %#v, want one final reply", sent)
 	}
-	want := "answer\n\n> ✨❤️🤍🤍🤍🤍🤍🤍🤍🤍🤍  💲2.02/💲150  🔄0h✨"
+	want := "answer\n\n" + formatStatuslineFooterText(&StatuslineFooterData{
+		UsedUSD:   2.02,
+		LimitUSD:  150,
+		Percent:   10,
+		Remaining: "0h",
+	})
 	if sent[0] != want {
 		t.Fatalf("final reply = %q, want %q", sent[0], want)
 	}
@@ -1245,9 +1270,65 @@ func TestProcessInteractiveEvents_StatuslineFooterOmitsUnknownModelName(t *testi
 	if len(sent) != 1 {
 		t.Fatalf("sent = %#v, want one final reply", sent)
 	}
-	want := "answer\n\n> ✨❤️🤍🤍🤍🤍🤍🤍🤍🤍🤍  💲2.02/💲150  🔄0h✨"
+	want := "answer\n\n" + formatStatuslineFooterText(&StatuslineFooterData{
+		UsedUSD:   2.02,
+		LimitUSD:  150,
+		Percent:   10,
+		Remaining: "0h",
+	})
 	if sent[0] != want {
 		t.Fatalf("final reply = %q, want %q", sent[0], want)
+	}
+}
+
+func TestProcessInteractiveEvents_SendsStructuredStatuslineWhenSupported(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"usedUsd":3.24,"limitUsd":150,"percent":22,"resetAt":"2000-01-01T00:00:00Z"}}`))
+	}))
+	defer srv.Close()
+
+	agent := &stubReplyFooterAgent{
+		stubModelModeAgent: stubModelModeAgent{model: "gpt-5"},
+	}
+	p := &statuslineRecordingPlatform{
+		stubPlatformEngine: stubPlatformEngine{n: "feishu"},
+	}
+	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
+	e.SetReplyFooterEnabled(true)
+	e.SetStatuslineFooterConfig(StatuslineFooterCfg{
+		Enabled:  true,
+		URL:      srv.URL,
+		Timeout:  time.Second,
+		CacheTTL: time.Minute,
+	})
+
+	sessionKey := "feishu:user-statusline-structured"
+	session := e.sessions.GetOrCreateActive(sessionKey)
+	agentSession := newControllableSession("s-statusline-structured")
+	state := &interactiveState{
+		agentSession: agentSession,
+		platform:     p,
+		replyCtx:     "ctx-statusline-structured",
+		agent:        agent,
+	}
+	e.interactiveStates[sessionKey] = state
+
+	agentSession.events <- Event{Type: EventResult, Content: "answer", Done: true}
+	e.processInteractiveEvents(state, session, e.sessions, sessionKey, "m-statusline-structured", time.Now(), nil, nil, state.replyCtx)
+
+	if sent := p.getSent(); len(sent) != 0 {
+		t.Fatalf("fallback sent = %#v, want structured statusline sender only", sent)
+	}
+	if len(p.statuslineContents) != 1 || p.statuslineContents[0] != "answer" {
+		t.Fatalf("statusline content = %#v, want answer", p.statuslineContents)
+	}
+	if len(p.statuslines) != 1 {
+		t.Fatalf("statuslines = %#v, want one", p.statuslines)
+	}
+	got := p.statuslines[0]
+	if got.Model != "gpt-5" || got.UsedUSD != 3.24 || got.LimitUSD != 150 || got.Percent != 22 || got.Remaining != "0h" {
+		t.Fatalf("statusline = %#v, want structured model/usage/reset data", got)
 	}
 }
 
