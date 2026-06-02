@@ -5725,7 +5725,7 @@ func formatStatuslineQuota(q *statuslineQuotaPayload, model string) string {
 		filled = 10
 	}
 	bar := strings.Repeat("\u2764\ufe0f", filled) + strings.Repeat("\U0001f90d", 10-filled)
-	model = strings.TrimSpace(model)
+	model = normalizeStatuslineModel(model)
 	if model == "" {
 		return fmt.Sprintf("%s%s  %s%.2f/%s%.0f  %s%s%s",
 			"\u2728",
@@ -5752,6 +5752,22 @@ func formatStatuslineQuota(q *statuslineQuotaPayload, model string) string {
 		model,
 		"\u2728",
 	)
+}
+
+func normalizeStatuslineModel(model string) string {
+	model = strings.TrimSpace(model)
+	if model == "" {
+		return ""
+	}
+
+	normalized := strings.ToLower(strings.TrimSpace(strings.Trim(model, "() ")))
+	if strings.HasPrefix(normalized, "\U0001f4bb") {
+		normalized = strings.TrimSpace(strings.Trim(strings.TrimPrefix(normalized, "\U0001f4bb"), "() "))
+	}
+	if normalized == "unknown" || normalized == "unknown-model" {
+		return ""
+	}
+	return model
 }
 
 func statuslineResetRemaining(resetAt string) string {

@@ -9,6 +9,8 @@ on:
 jobs:
   windows-amd64:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -20,8 +22,8 @@ jobs:
 
       - name: Format and test touched packages
         run: |
-          gofmt -w cmd/cc-connect/main.go config/config.go core/engine.go core/engine_test.go
-          go test ./config ./core -run 'TestProcessInteractiveEvents_(AppendsStatuslineFooterWhenConfigured|StatuslineFooterOmitsUnknownModel|AppendsReplyFooterWhenEnabled)'
+          gofmt -w cmd/cc-connect/main.go config/config.go core/engine.go core/engine_test.go platform/feishu/feishu.go platform/feishu/platform_test.go
+          go test ./config ./core ./platform/feishu -run 'TestProcessInteractiveEvents_(AppendsStatuslineFooterWhenConfigured|StatuslineFooterOmitsUnknownModel|StatuslineFooterOmitsUnknownModelName|AppendsReplyFooterWhenEnabled)|TestBuildReplyContent_UsesInteractiveTagsForStatuslineFooter'
 
       - name: Build Windows executable
         run: |
@@ -29,6 +31,22 @@ jobs:
           BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
           GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags no_web -ldflags "-s -w -X main.version=v1.3.3-beta.4-statusline -X main.commit=${GITHUB_SHA::7} -X main.buildTime=${BUILD_TIME}" -o dist/cc-connect.exe ./cmd/cc-connect
           sha256sum dist/cc-connect.exe > dist/checksums.txt
+
+      - name: Publish artifact branch
+        run: |
+          tmp="$(mktemp -d)"
+          cp dist/cc-connect.exe dist/checksums.txt "$tmp/"
+          pub="$(mktemp -d)"
+          cd "$pub"
+          git init
+          git switch -c cc-connect-statusline-artifact
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git remote add origin "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          cp "$tmp/cc-connect.exe" "$tmp/checksums.txt" .
+          git add cc-connect.exe checksums.txt
+          git commit -m "Publish statusline artifact ${GITHUB_SHA::7}"
+          git push origin HEAD:cc-connect-statusline-artifact --force
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

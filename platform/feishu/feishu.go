@@ -2523,6 +2523,9 @@ func predictMsgType(content string) string {
 }
 
 func buildReplyContent(content string) (msgType string, body string) {
+	if reply, statusline, ok := splitStatuslineFooter(content); ok {
+		return larkim.MsgTypeInteractive, buildStatuslineCardJSON(reply, statusline)
+	}
 	if !containsMarkdown(content) {
 		b, _ := json.Marshal(map[string]string{"text": content})
 		return larkim.MsgTypeText, string(b)
@@ -2535,6 +2538,138 @@ func buildReplyContent(content string) (msgType string, body string) {
 		return larkim.MsgTypePost, buildPostMdJSON(content)
 	}
 	return larkim.MsgTypeInteractive, buildCardJSON(sanitizeMarkdownURLs(preprocessFeishuMarkdown(content)))
+}
+
+type statuslineParts struct {
+	Model     string
+	Usage     string
+	Remaining string
+}
+
+func splitStatuslineFooter(content string) (reply string, status statuslineParts, ok bool) {
+	content = strings.TrimRight(content, "\n")
+	idx := strings.LastIndex(content, "\n\n>")
+	if idx < 0 {
+		if strings.HasPrefix(strings.TrimSpace(content), ">") {
+			idx = 0
+		} else {
+			return "", statuslineParts{}, false
+		}
+	}
+
+	reply = strings.TrimSpace(content[:idx])
+	footer := strings.TrimSpace(content[idx:])
+	footer = strings.TrimSpace(strings.TrimPrefix(footer, ">"))
+	status, ok = parseStatuslineFooter(footer)
+	if !ok {
+		return "", statuslineParts{}, false
+	}
+	return reply, status, true
+}
+
+func parseStatuslineFooter(footer string) (statuslineParts, bool) {
+	const (
+		sparkles = "\u2728"
+		money    = "\U0001f4b2"
+		reset    = "\U0001f504"
+		laptop   = "\U0001f4bb"
+	)
+	footer = strings.TrimSpace(strings.Trim(footer, sparkles+" "))
+	moneyIdx := strings.Index(footer, money)
+	resetIdx := strings.Index(footer, reset)
+	if moneyIdx < 0 || resetIdx < 0 || resetIdx <= moneyIdx {
+		return statuslineParts{}, false
+	}
+	laptopIdx := strings.Index(footer, laptop)
+	if laptopIdx >= 0 && laptopIdx <= resetIdx {
+		return statuslineParts{}, false
+	}
+
+	usage := strings.TrimSpace(footer[moneyIdx:resetIdx])
+	usage = normalizeStatuslineUsageTag(usage)
+	remainingEnd := len(footer)
+	if laptopIdx >= 0 {
+		remainingEnd = laptopIdx
+	}
+	remaining := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(footer[resetIdx:remainingEnd]), reset))
+	model := ""
+	if laptopIdx >= 0 {
+		model = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(footer[laptopIdx:]), laptop))
+	}
+	if usage == "" || remaining == "" {
+		return statuslineParts{}, false
+	}
+	return statuslineParts{
+		Model:     model,
+		Usage:     usage,
+		Remaining: remaining,
+	}, true
+}
+
+func normalizeStatuslineUsageTag(usage string) string {
+	usage = strings.ReplaceAll(usage, "\U0001f4b2", "$")
+	usage = strings.Join(strings.Fields(usage), "")
+	parts := strings.Split(usage, "/")
+	if len(parts) != 2 {
+		return strings.TrimSpace(usage)
+	}
+	left := strings.TrimSpace(parts[0])
+	right := strings.TrimSpace(parts[1])
+	if left != "" && !strings.HasPrefix(left, "$") {
+		left = "$" + left
+	}
+	if right != "" && !strings.HasPrefix(right, "$") {
+		right = "$" + right
+	}
+	return strings.TrimSpace(left + " / " + right)
+}
+
+func buildStatuslineCardJSON(reply string, status statuslineParts) string {
+	statusContent := buildStatuslineTagMarkdown(status)
+	elements := make([]map[string]any, 0, 2)
+	if strings.TrimSpace(reply) != "" {
+		elements = append(elements, map[string]any{
+			"tag":        "markdown",
+			"content":    sanitizeMarkdownURLs(preprocessFeishuMarkdown(reply)),
+			"text_align": "left",
+			"text_size":  "normal",
+			"margin":     "0px 0px 8px 0px",
+		})
+	}
+	elements = append(elements, map[string]any{
+		"tag":        "markdown",
+		"content":    statusContent,
+		"text_align": "left",
+		"text_size":  "normal",
+		"margin":     "0px 0px 0px 0px",
+	})
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"wide_screen_mode": true,
+			"update_multi":     true,
+		},
+		"body": map[string]any{
+			"direction": "vertical",
+			"elements":  elements,
+		},
+	}
+	b, _ := json.Marshal(card)
+	return string(b)
+}
+
+func buildStatuslineTagMarkdown(status statuslineParts) string {
+	var tags []string
+	if model := strings.TrimSpace(status.Model); model != "" {
+		tags = append(tags, fmt.Sprintf("<text_tag color='blue'>%s</text_tag>", html.EscapeString(model)))
+	}
+	if usage := strings.TrimSpace(status.Usage); usage != "" {
+		tags = append(tags, fmt.Sprintf("<text_tag color='green'>%s</text_tag>", html.EscapeString(usage)))
+	}
+	if remaining := strings.TrimSpace(status.Remaining); remaining != "" {
+		tags = append(tags, fmt.Sprintf("<text_tag color='purple'>%s</text_tag>", html.EscapeString(remaining)))
+	}
+	return strings.Join(tags, " ")
 }
 
 // hasComplexMarkdown detects code blocks or tables that require card rendering.
@@ -2614,6 +2749,11 @@ var markdownIndicators = []string{
 func containsMarkdown(s string) bool {
 	for _, ind := range markdownIndicators {
 		if strings.Contains(s, ind) {
+			return true
+		}
+	}
+	for _, line := range strings.Split(s, "\n") {
+		if strings.HasPrefix(strings.TrimSpace(line), ">") {
 			return true
 		}
 	}

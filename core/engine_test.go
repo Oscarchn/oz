@@ -1207,6 +1207,50 @@ func TestProcessInteractiveEvents_StatuslineFooterOmitsUnknownModel(t *testing.T
 	}
 }
 
+func TestProcessInteractiveEvents_StatuslineFooterOmitsUnknownModelName(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"usedUsd":2.02,"limitUsd":150,"percent":10,"resetAt":"2000-01-01T00:00:00Z"}}`))
+	}))
+	defer srv.Close()
+
+	agent := &stubReplyFooterAgent{
+		stubModelModeAgent: stubModelModeAgent{model: "unknown"},
+	}
+	p := &stubPlatformEngine{n: "telegram"}
+	e := NewEngine("test", agent, []Platform{p}, "", LangEnglish)
+	e.SetReplyFooterEnabled(true)
+	e.SetStatuslineFooterConfig(StatuslineFooterCfg{
+		Enabled:  true,
+		URL:      srv.URL,
+		Timeout:  time.Second,
+		CacheTTL: time.Minute,
+	})
+
+	sessionKey := "telegram:user-statusline-footer-unknown-model"
+	session := e.sessions.GetOrCreateActive(sessionKey)
+	agentSession := newControllableSession("s-statusline-footer-unknown-model")
+	state := &interactiveState{
+		agentSession: agentSession,
+		platform:     p,
+		replyCtx:     "ctx-statusline-footer-unknown-model",
+		agent:        agent,
+	}
+	e.interactiveStates[sessionKey] = state
+
+	agentSession.events <- Event{Type: EventResult, Content: "answer", Done: true}
+	e.processInteractiveEvents(state, session, e.sessions, sessionKey, "m-statusline-footer-unknown-model", time.Now(), nil, nil, state.replyCtx)
+
+	sent := p.getSent()
+	if len(sent) != 1 {
+		t.Fatalf("sent = %#v, want one final reply", sent)
+	}
+	want := "answer\n\n> ✨❤️🤍🤍🤍🤍🤍🤍🤍🤍🤍  💲2.02/💲150  🔄0h✨"
+	if sent[0] != want {
+		t.Fatalf("final reply = %q, want %q", sent[0], want)
+	}
+}
+
 func TestProcessInteractiveEvents_AppendsContextIndicatorInsideReplyFooter(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("HOME", homeDir)
