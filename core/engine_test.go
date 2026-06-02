@@ -1170,13 +1170,13 @@ func TestProcessInteractiveEvents_AppendsStatuslineFooterWhenConfigured(t *testi
 	if len(sent) != 1 {
 		t.Fatalf("sent = %#v, want one final reply", sent)
 	}
-	want := "answer\n\n" + formatStatuslineFooterText(&StatuslineFooterData{
+	want := "answer\n\n*" + formatStatuslineFooterText(&StatuslineFooterData{
 		Model:     "glm-5.1-ali",
 		UsedUSD:   2.02,
 		LimitUSD:  150,
 		Percent:   10,
 		Remaining: "0h",
-	})
+	}) + "*"
 	if sent[0] != want {
 		t.Fatalf("final reply = %q, want %q", sent[0], want)
 	}
@@ -1221,12 +1221,12 @@ func TestProcessInteractiveEvents_StatuslineFooterOmitsUnknownModel(t *testing.T
 	if len(sent) != 1 {
 		t.Fatalf("sent = %#v, want one final reply", sent)
 	}
-	want := "answer\n\n" + formatStatuslineFooterText(&StatuslineFooterData{
+	want := "answer\n\n*" + formatStatuslineFooterText(&StatuslineFooterData{
 		UsedUSD:   2.02,
 		LimitUSD:  150,
 		Percent:   10,
 		Remaining: "0h",
-	})
+	}) + "*"
 	if sent[0] != want {
 		t.Fatalf("final reply = %q, want %q", sent[0], want)
 	}
@@ -1270,12 +1270,12 @@ func TestProcessInteractiveEvents_StatuslineFooterOmitsUnknownModelName(t *testi
 	if len(sent) != 1 {
 		t.Fatalf("sent = %#v, want one final reply", sent)
 	}
-	want := "answer\n\n" + formatStatuslineFooterText(&StatuslineFooterData{
+	want := "answer\n\n*" + formatStatuslineFooterText(&StatuslineFooterData{
 		UsedUSD:   2.02,
 		LimitUSD:  150,
 		Percent:   10,
 		Remaining: "0h",
-	})
+	}) + "*"
 	if sent[0] != want {
 		t.Fatalf("final reply = %q, want %q", sent[0], want)
 	}
