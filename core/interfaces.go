@@ -188,6 +188,22 @@ type MessageUpdater interface {
 	UpdateMessage(ctx context.Context, replyCtx any, content string) error
 }
 
+// StatuslineFooterData is a structured quota/model footer snapshot that can be
+// rendered natively by platforms with richer message formats.
+type StatuslineFooterData struct {
+	Model     string
+	UsedUSD   float64
+	LimitUSD  float64
+	Percent   int
+	Remaining string
+}
+
+// StatuslineReplySender is implemented by platforms that can render assistant
+// replies with a structured statusline footer instead of a flattened text suffix.
+type StatuslineReplySender interface {
+	SendStatuslineReply(ctx context.Context, replyCtx any, content string, statusline StatuslineFooterData) error
+}
+
 // ProgressStyleProvider is an optional interface for platforms that expose
 // a preferred style for intermediate progress rendering.
 // Typical values: "legacy", "compact", "card".

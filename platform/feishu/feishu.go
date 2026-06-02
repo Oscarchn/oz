@@ -9,6 +9,7 @@ import (
 	"html"
 	"io"
 	"log/slog"
+	"math"
 	"math/rand/v2"
 	"net"
 	"net/http"
@@ -2328,6 +2329,20 @@ func (p *Platform) Send(ctx context.Context, rctx any, content string) error {
 	return p.sendNewMessageToChat(ctx, rc, msgType, msgBody)
 }
 
+func (p *Platform) SendStatuslineReply(ctx context.Context, rctx any, content string, statusline core.StatuslineFooterData) error {
+	rc, ok := rctx.(replyContext)
+	if !ok {
+		return fmt.Errorf("%s: invalid reply context type %T", p.tag(), rctx)
+	}
+
+	content = p.resolveMentionsInContent(ctx, rc.chatID, content)
+	cardJSON := buildStructuredStatuslineCardJSON(content, statusline)
+	if !p.shouldUseThreadOrReplyAPI(rc) {
+		return p.sendNewMessageToChat(ctx, rc, larkim.MsgTypeInteractive, cardJSON)
+	}
+	return p.replyMessage(ctx, rc, larkim.MsgTypeInteractive, cardJSON)
+}
+
 func (p *Platform) SendImage(ctx context.Context, rctx any, img core.ImageAttachment) error {
 	rc, ok := rctx.(replyContext)
 	if !ok {
@@ -2614,6 +2629,15 @@ func normalizeStatuslineUsageTag(usage string) string {
 
 func buildStatuslineCardJSON(reply string, status statuslineParts) string {
 	statusContent := buildStatuslineTagMarkdown(status)
+	return buildStatuslineCardJSONWithMarkdown(reply, statusContent)
+}
+
+func buildStructuredStatuslineCardJSON(reply string, status core.StatuslineFooterData) string {
+	statusContent := buildStructuredStatuslineTagMarkdown(status)
+	return buildStatuslineCardJSONWithMarkdown(reply, statusContent)
+}
+
+func buildStatuslineCardJSONWithMarkdown(reply string, statusContent string) string {
 	elements := make([]map[string]any, 0, 2)
 	if strings.TrimSpace(reply) != "" {
 		elements = append(elements, map[string]any{
@@ -2644,6 +2668,27 @@ func buildStatuslineCardJSON(reply string, status statuslineParts) string {
 	}
 	b, _ := json.Marshal(card)
 	return string(b)
+}
+
+func buildStructuredStatuslineTagMarkdown(status core.StatuslineFooterData) string {
+	model := strings.TrimSpace(status.Model)
+	usage := formatStatuslineUsage(status.UsedUSD, status.LimitUSD)
+	remaining := strings.TrimSpace(status.Remaining)
+	var tags []string
+	if model != "" {
+		tags = append(tags, fmt.Sprintf("<text_tag color='blue'>%s</text_tag>", html.EscapeString(model)))
+	}
+	if usage != "" {
+		tags = append(tags, fmt.Sprintf("<text_tag color='green'>%s</text_tag>", html.EscapeString(usage)))
+	}
+	if remaining != "" {
+		tags = append(tags, fmt.Sprintf("<text_tag color='purple'>%s</text_tag>", html.EscapeString(remaining)))
+	}
+	return strings.Join(tags, " ")
+}
+
+func formatStatuslineUsage(used, limit float64) string {
+	return fmt.Sprintf("$%.2f / $%.0f", used, math.Trunc(limit))
 }
 
 func buildStatuslineTagMarkdown(status statuslineParts) string {

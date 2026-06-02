@@ -88,7 +88,7 @@ type StatuslineFooterCfg struct {
 }
 
 type statuslineFooterCache struct {
-	text      string
+	data      *StatuslineFooterData
 	fetchedAt time.Time
 }
 
@@ -4255,12 +4255,20 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					contextText = fmt.Sprintf("[ctx: ~%d%%]", selfPct)
 				}
 			}
+			var statuslineFooter *StatuslineFooterData
 			if !isSilent {
 				footerContext := replyFooterContextText(replyFooterSessionContextUsage(state.agentSession), e.i18n)
 				if contextText != "" && e.replyFooterEnabled {
 					footerContext = contextText
 				}
-				if footer := e.buildReplyFooter(replyAgent, state.agentSession, workspaceDir, footerContext); footer != "" {
+				model := replyFooterModel(state.agentSession, replyAgent)
+				if data := e.statuslineFooterData(model); data != nil {
+					if _, ok := p.(StatuslineReplySender); ok {
+						statuslineFooter = data
+					} else {
+						cleanResponse = appendReplyFooter(cleanResponse, formatStatuslineFooterText(data))
+					}
+				} else if footer := e.buildReplyFooter(replyAgent, state.agentSession, workspaceDir, footerContext); footer != "" {
 					cleanResponse = appendReplyFooter(cleanResponse, footer)
 				} else if contextText != "" {
 					cleanResponse += "\n" + contextText
@@ -4322,6 +4330,20 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 					cardMessageID = nil
 				}
 				slog.Info("silent reply suppressed", "session", session.ID)
+			} else if statuslineFooter != nil {
+				sp.discard()
+				if sender, ok := p.(StatuslineReplySender); ok {
+					if err := sender.SendStatuslineReply(e.ctx, replyCtx, baseResponse, *statuslineFooter); err != nil {
+						slog.Error("failed to send statusline reply", "platform", p.Name(), "error", err)
+						return
+					}
+				} else {
+					for _, chunk := range splitMessage(fullResponse, maxPlatformMessageLen) {
+						if err := sendWorkspaceWithError(p, replyCtx, chunk); err != nil {
+							return
+						}
+					}
+				}
 			} else if hasRichCard {
 				parts := []string{fullResponse}
 				if splitter, ok := p.(MarkdownTableSplitter); ok {
@@ -5631,32 +5653,54 @@ func (e *Engine) buildReplyFooter(agent Agent, session AgentSession, workspaceDi
 }
 
 func (e *Engine) statuslineFooterText(model string) string {
+	if data := e.statuslineFooterData(model); data != nil {
+		return formatStatuslineFooterText(data)
+	}
+	return ""
+}
+
+func (e *Engine) statuslineFooterData(model string) *StatuslineFooterData {
 	e.replyFooterMu.Lock()
 	cfg := e.statuslineFooterCfg
 	cached := e.statuslineFooter
 	e.replyFooterMu.Unlock()
 
 	if !cfg.Enabled {
-		return ""
+		return nil
 	}
 	if !cached.fetchedAt.IsZero() && time.Since(cached.fetchedAt) < cfg.CacheTTL {
-		return cached.text
+		if cached.data == nil {
+			return nil
+		}
+		data := *cached.data
+		if model = normalizeStatuslineModel(model); model != "" {
+			data.Model = model
+		}
+		return &data
 	}
 
-	text := ""
+	var data *StatuslineFooterData
 	ctx, cancel := context.WithTimeout(e.ctx, cfg.Timeout)
 	defer cancel()
 	if quota, err := fetchStatuslineQuota(ctx, cfg); err == nil {
-		text = formatStatuslineQuota(quota, model)
+		data = statuslineFooterDataFromQuota(quota, model)
 	} else {
 		slog.Debug("statusline footer: fetch failed", "error", err)
-		text = cached.text
+		if cached.data != nil {
+			cloned := *cached.data
+			data = &cloned
+		}
 	}
 
 	e.replyFooterMu.Lock()
-	e.statuslineFooter = statuslineFooterCache{text: text, fetchedAt: time.Now()}
+	if data == nil {
+		e.statuslineFooter = statuslineFooterCache{fetchedAt: time.Now()}
+	} else {
+		cachedData := *data
+		e.statuslineFooter = statuslineFooterCache{data: &cachedData, fetchedAt: time.Now()}
+	}
 	e.replyFooterMu.Unlock()
-	return text
+	return data
 }
 
 type statuslineQuotaPayload struct {
@@ -5706,11 +5750,28 @@ func fetchStatuslineQuota(ctx context.Context, cfg StatuslineFooterCfg) (*status
 	return &payload, nil
 }
 
-func formatStatuslineQuota(q *statuslineQuotaPayload, model string) string {
+func statuslineFooterDataFromQuota(q *statuslineQuotaPayload, model string) *StatuslineFooterData {
 	if q == nil {
+		return nil
+	}
+	return &StatuslineFooterData{
+		Model:     normalizeStatuslineModel(model),
+		UsedUSD:   q.Data.UsedUSD,
+		LimitUSD:  q.Data.LimitUSD,
+		Percent:   q.Data.Percent,
+		Remaining: statuslineResetRemaining(q.Data.ResetAt),
+	}
+}
+
+func formatStatuslineFooterText(data *StatuslineFooterData) string {
+	if data == nil {
 		return ""
 	}
-	percent := q.Data.Percent
+	used := data.UsedUSD
+	limit := data.LimitUSD
+	remaining := data.Remaining
+	model := normalizeStatuslineModel(data.Model)
+	percent := data.Percent
 	if percent < 0 {
 		percent = 0
 	}
@@ -5725,17 +5786,16 @@ func formatStatuslineQuota(q *statuslineQuotaPayload, model string) string {
 		filled = 10
 	}
 	bar := strings.Repeat("\u2764\ufe0f", filled) + strings.Repeat("\U0001f90d", 10-filled)
-	model = normalizeStatuslineModel(model)
 	if model == "" {
 		return fmt.Sprintf("%s%s  %s%.2f/%s%.0f  %s%s%s",
 			"\u2728",
 			bar,
 			"\U0001f4b2",
-			q.Data.UsedUSD,
+			used,
 			"\U0001f4b2",
-			math.Trunc(q.Data.LimitUSD),
+			math.Trunc(limit),
 			"\U0001f504",
-			statuslineResetRemaining(q.Data.ResetAt),
+			remaining,
 			"\u2728",
 		)
 	}
@@ -5743,11 +5803,11 @@ func formatStatuslineQuota(q *statuslineQuotaPayload, model string) string {
 		"\u2728",
 		bar,
 		"\U0001f4b2",
-		q.Data.UsedUSD,
+		used,
 		"\U0001f4b2",
-		math.Trunc(q.Data.LimitUSD),
+		math.Trunc(limit),
 		"\U0001f504",
-		statuslineResetRemaining(q.Data.ResetAt),
+		remaining,
 		"\U0001f4bb",
 		model,
 		"\u2728",

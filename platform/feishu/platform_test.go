@@ -856,6 +856,38 @@ func TestBuildReplyContent_UsesInteractiveTagsForDollarStatuslineFooter(t *testi
 	}
 }
 
+func TestBuildStructuredStatuslineCardJSON_UsesDataFields(t *testing.T) {
+	body := buildStructuredStatuslineCardJSON("agent answer", core.StatuslineFooterData{
+		Model:     "gpt-5",
+		UsedUSD:   3.24,
+		LimitUSD:  150,
+		Remaining: "28d10h",
+	})
+	var card struct {
+		Body struct {
+			Elements []struct {
+				Content string `json:"content"`
+			} `json:"elements"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(body), &card); err != nil {
+		t.Fatalf("body is not valid card JSON: %v\n%s", err, body)
+	}
+	if len(card.Body.Elements) != 2 {
+		t.Fatalf("elements = %d, want 2: %s", len(card.Body.Elements), body)
+	}
+	statusline := card.Body.Elements[1].Content
+	for _, want := range []string{
+		"<text_tag color='blue'>gpt-5</text_tag>",
+		"<text_tag color='green'>$3.24 / $150</text_tag>",
+		"<text_tag color='purple'>28d10h</text_tag>",
+	} {
+		if !strings.Contains(statusline, want) {
+			t.Fatalf("statusline missing %q: %s", want, statusline)
+		}
+	}
+}
+
 func TestBuildRichCard_UsesInteractiveTagsForStatuslineFooter(t *testing.T) {
 	markdown := "agent answer\n> \u2728\u2764\ufe0f\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d  $ 3.24 / $ 150  \U0001f50428d10h\u2728"
 	body := buildRichCard(core.CardStatusDone, "", nil, markdown, false, 0)
