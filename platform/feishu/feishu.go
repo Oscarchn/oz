@@ -2575,9 +2575,8 @@ func parseStatuslineFooter(footer string) (statuslineParts, bool) {
 		laptop   = "\U0001f4bb"
 	)
 	footer = strings.TrimSpace(strings.Trim(footer, sparkles+" "))
-	moneyIdx := strings.Index(footer, money)
 	resetIdx := strings.Index(footer, reset)
-	if moneyIdx < 0 || resetIdx < 0 || resetIdx <= moneyIdx {
+	if resetIdx < 0 {
 		return statuslineParts{}, false
 	}
 	laptopIdx := strings.Index(footer, laptop)
@@ -2585,7 +2584,15 @@ func parseStatuslineFooter(footer string) (statuslineParts, bool) {
 		return statuslineParts{}, false
 	}
 
-	usage := strings.TrimSpace(footer[moneyIdx:resetIdx])
+	usagePrefix := footer[:resetIdx]
+	usageStart := strings.Index(usagePrefix, money)
+	if usageStart < 0 {
+		usageStart = strings.Index(usagePrefix, "$")
+	}
+	if usageStart < 0 {
+		return statuslineParts{}, false
+	}
+	usage := strings.TrimSpace(usagePrefix[usageStart:])
 	usage = normalizeStatuslineUsageTag(usage)
 	remainingEnd := len(footer)
 	if laptopIdx >= 0 {

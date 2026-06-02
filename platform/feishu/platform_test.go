@@ -826,6 +826,36 @@ func TestBuildReplyContent_UsesInteractiveTagsForStatuslineFooter(t *testing.T) 
 	}
 }
 
+func TestBuildReplyContent_UsesInteractiveTagsForDollarStatuslineFooter(t *testing.T) {
+	msgType, body := buildReplyContent("agent answer\n\n> ✨🤍🤍🤍🤍🤍🤍🤍🤍🤍🤍  $ 3.17 / $ 150  🔄28d10h✨")
+	if msgType != larkim.MsgTypeInteractive {
+		t.Fatalf("buildReplyContent() msgType = %q, want %q", msgType, larkim.MsgTypeInteractive)
+	}
+	var card struct {
+		Body struct {
+			Elements []struct {
+				Content string `json:"content"`
+			} `json:"elements"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(body), &card); err != nil {
+		t.Fatalf("buildReplyContent() body is not valid card JSON: %v\n%s", err, body)
+	}
+	if len(card.Body.Elements) != 2 {
+		t.Fatalf("buildReplyContent() elements = %d, want 2: %s", len(card.Body.Elements), body)
+	}
+	statusline := card.Body.Elements[1].Content
+	if strings.Contains(statusline, "color='blue'") {
+		t.Fatalf("statusline should omit model tag when model is absent: %s", statusline)
+	}
+	if !strings.Contains(statusline, "<text_tag color='green'>$3.17 / $150</text_tag>") {
+		t.Fatalf("statusline missing usage tag: %s", statusline)
+	}
+	if !strings.Contains(statusline, "<text_tag color='purple'>28d10h</text_tag>") {
+		t.Fatalf("statusline missing remaining tag: %s", statusline)
+	}
+}
+
 func TestLark_ReconstructReplyCtx(t *testing.T) {
 	p, err := newPlatform("lark", lark.LarkBaseUrl, map[string]any{
 		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": false,
