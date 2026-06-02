@@ -2343,6 +2343,16 @@ func (p *Platform) SendStatuslineReply(ctx context.Context, rctx any, content st
 	return p.replyMessage(ctx, rc, larkim.MsgTypeInteractive, cardJSON)
 }
 
+func (p *Platform) UpdateStatuslineReply(ctx context.Context, previewHandle any, content string, statusline core.StatuslineFooterData) error {
+	h, ok := previewHandle.(*feishuPreviewHandle)
+	if !ok {
+		return fmt.Errorf("%s: invalid preview handle type %T", p.tag(), previewHandle)
+	}
+	content = p.resolveMentionsInContent(ctx, h.chatID, content)
+	cardJSON := buildStructuredStatuslineCardJSON(content, statusline)
+	return p.UpdateMessage(ctx, previewHandle, cardJSON)
+}
+
 func (p *Platform) SendImage(ctx context.Context, rctx any, img core.ImageAttachment) error {
 	rc, ok := rctx.(replyContext)
 	if !ok {

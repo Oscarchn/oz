@@ -204,6 +204,12 @@ type StatuslineReplySender interface {
 	SendStatuslineReply(ctx context.Context, replyCtx any, content string, statusline StatuslineFooterData) error
 }
 
+// StatuslineReplyUpdater is implemented by platforms that can update an
+// existing preview message into a final structured statusline reply.
+type StatuslineReplyUpdater interface {
+	UpdateStatuslineReply(ctx context.Context, previewHandle any, content string, statusline StatuslineFooterData) error
+}
+
 // ProgressStyleProvider is an optional interface for platforms that expose
 // a preferred style for intermediate progress rendering.
 // Typical values: "legacy", "compact", "card".

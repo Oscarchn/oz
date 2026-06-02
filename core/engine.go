@@ -4331,8 +4331,9 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 				}
 				slog.Info("silent reply suppressed", "session", session.ID)
 			} else if statuslineFooter != nil {
-				sp.discard()
-				if sender, ok := p.(StatuslineReplySender); ok {
+				if sp.finishStatusline(baseResponse, *statuslineFooter) {
+					slog.Debug("EventResult: finalized statusline preview in-place", "response_len", len(baseResponse))
+				} else if sender, ok := p.(StatuslineReplySender); ok {
 					if err := sender.SendStatuslineReply(e.ctx, replyCtx, baseResponse, *statuslineFooter); err != nil {
 						slog.Error("failed to send statusline reply", "platform", p.Name(), "error", err)
 						return

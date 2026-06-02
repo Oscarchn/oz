@@ -20,8 +20,8 @@ jobs:
 
       - name: Format and test touched packages
         run: |
-          gofmt -w cmd/cc-connect/main.go config/config.go core/engine.go core/engine_test.go platform/feishu/feishu.go platform/feishu/platform_test.go
-          go test ./config ./core ./platform/feishu -run 'TestProcessInteractiveEvents_(AppendsStatuslineFooterWhenConfigured|StatuslineFooterOmitsUnknownModel|StatuslineFooterOmitsUnknownModelName|SendsStructuredStatuslineWhenSupported|AppendsReplyFooterWhenEnabled)|TestBuildReplyContent_UsesInteractiveTagsFor(StatuslineFooter|DollarStatuslineFooter)|TestBuildStructuredStatuslineCardJSON_UsesDataFields|TestBuildRichCard_UsesInteractiveTagsForStatuslineFooter'
+          gofmt -w cmd/cc-connect/main.go config/config.go core/engine.go core/engine_test.go core/interfaces.go core/streaming.go core/streaming_test.go platform/feishu/feishu.go platform/feishu/platform_test.go
+          go test ./config ./core ./platform/feishu -run 'TestProcessInteractiveEvents_(AppendsStatuslineFooterWhenConfigured|StatuslineFooterOmitsUnknownModel|StatuslineFooterOmitsUnknownModelName|SendsStructuredStatuslineWhenSupported|AppendsReplyFooterWhenEnabled)|TestStreamPreview_FinishStatuslineUpdatesPreviewInPlace|TestBuildReplyContent_UsesInteractiveTagsFor(StatuslineFooter|DollarStatuslineFooter)|TestBuildStructuredStatuslineCardJSON_UsesDataFields|TestBuildRichCard_UsesInteractiveTagsForStatuslineFooter'
 
       - name: Build Windows executable
         run: |

@@ -414,6 +414,56 @@ func (sp *streamPreview) finish(finalText string) bool {
 	return true
 }
 
+// finishStatusline updates an active preview message into a final structured
+// statusline reply. Returns false when no preview exists or the platform cannot
+// update it, so the caller can send a separate final message.
+func (sp *streamPreview) finishStatusline(content string, statusline StatuslineFooterData) bool {
+	sp.mu.Lock()
+	defer sp.mu.Unlock()
+
+	sp.cancelTimerLocked()
+
+	select {
+	case <-sp.timerStop:
+	default:
+		close(sp.timerStop)
+	}
+
+	if sp.transform != nil {
+		content = sp.transform(content)
+	}
+	if sp.previewMsgID == nil {
+		slog.Debug("stream preview statusline finish: no active preview")
+		return false
+	}
+
+	updater, ok := sp.platform.(StatuslineReplyUpdater)
+	if !ok {
+		slog.Debug("stream preview statusline finish: no StatuslineReplyUpdater")
+		if cleaner, ok := sp.platform.(PreviewCleaner); ok {
+			_ = cleaner.DeletePreviewMessage(sp.ctx, sp.previewMsgID)
+		}
+		sp.previewMsgID = nil
+		sp.degraded = true
+		return false
+	}
+
+	slog.Debug("stream preview statusline finish: updating preview", "content_len", len(content))
+	if err := updater.UpdateStatuslineReply(sp.ctx, sp.previewMsgID, content, statusline); err != nil {
+		slog.Debug("stream preview statusline finish: update failed, cleaning up preview", "error", err)
+		if cleaner, ok := sp.platform.(PreviewCleaner); ok {
+			_ = cleaner.DeletePreviewMessage(sp.ctx, sp.previewMsgID)
+		}
+		sp.previewMsgID = nil
+		sp.degraded = true
+		return false
+	}
+
+	sp.lastSentText = content
+	sp.lastSentViaUpdate = true
+	return true
+}
+
 // setStatus updates the card header status of the active preview message.
 // If the preview is not yet active or is degraded, the status is saved and
 // applied when the preview recovers (at finish time).

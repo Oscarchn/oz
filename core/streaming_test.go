@@ -195,6 +195,19 @@ func (m *mockKeepPreviewPlatform) KeepPreviewOnFinish() bool {
 	return true
 }
 
+type mockStatuslinePreviewPlatform struct {
+	mockCleanerPlatform
+	statuslineUpdates []StatuslineFooterData
+}
+
+func (m *mockStatuslinePreviewPlatform) UpdateStatuslineReply(_ context.Context, handle any, content string, statusline StatuslineFooterData) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.messages = append(m.messages, "statusline-update:"+content)
+	m.statuslineUpdates = append(m.statuslineUpdates, statusline)
+	return nil
+}
+
 func TestStreamPreview_FreezeDeletesOnFinish(t *testing.T) {
 	mp := &mockCleanerPlatform{}
 	cfg := StreamPreviewCfg{
@@ -217,6 +230,47 @@ func TestStreamPreview_FreezeDeletesOnFinish(t *testing.T) {
 	ok := sp.finish("Hello World Final")
 	if !ok {
 		t.Error("finish should return true when degraded recovery via UpdateMessage succeeds")
+	}
+}
+
+func TestStreamPreview_FinishStatuslineUpdatesPreviewInPlace(t *testing.T) {
+	mp := &mockStatuslinePreviewPlatform{}
+	cfg := StreamPreviewCfg{
+		Enabled:       true,
+		IntervalMs:    50,
+		MinDeltaChars: 1,
+		MaxChars:      500,
+	}
+
+	sp := newStreamPreview(cfg, mp, "ctx", context.Background(), nil)
+	sp.appendText("draft answer")
+	time.Sleep(100 * time.Millisecond)
+
+	statusline := StatuslineFooterData{
+		Model:     "gpt-5",
+		UsedUSD:   3.24,
+		LimitUSD:  150,
+		Remaining: "28d10h",
+	}
+	ok := sp.finishStatusline("final answer", statusline)
+	if !ok {
+		t.Fatal("finishStatusline should return true when preview update succeeds")
+	}
+
+	mp.mu.Lock()
+	deletedCount := len(mp.deleted)
+	msgs := append([]string(nil), mp.messages...)
+	updates := append([]StatuslineFooterData(nil), mp.statuslineUpdates...)
+	mp.mu.Unlock()
+
+	if deletedCount != 0 {
+		t.Fatalf("expected no delete call, got %d", deletedCount)
+	}
+	if len(msgs) < 2 || msgs[len(msgs)-1] != "statusline-update:final answer" {
+		t.Fatalf("messages = %#v, want final statusline update in place", msgs)
+	}
+	if len(updates) != 1 || updates[0].Model != "gpt-5" || updates[0].UsedUSD != 3.24 || updates[0].Remaining != "28d10h" {
+		t.Fatalf("statusline updates = %#v, want structured statusline data", updates)
 	}
 }
 
