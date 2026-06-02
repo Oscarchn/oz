@@ -2546,19 +2546,28 @@ type statuslineParts struct {
 	Remaining string
 }
 
+var (
+	statuslineUsagePattern     = regexp.MustCompile(`(?:\x{1F4B2}|\$)\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*(?:\x{1F4B2}|\$)\s*([0-9]+(?:\.[0-9]+)?)`)
+	statuslineRemainingPattern = regexp.MustCompile(`\x{1F504}\s*([0-9]+(?:d[0-9]+h?|h(?:[0-9]+m?)?|m)?)`)
+	statuslineModelPattern     = regexp.MustCompile(`\x{1F4BB}\s*([^\x{2728}\r\n]+)`)
+)
+
 func splitStatuslineFooter(content string) (reply string, status statuslineParts, ok bool) {
 	content = strings.TrimRight(content, "\n")
-	idx := strings.LastIndex(content, "\n\n>")
-	if idx < 0 {
-		if strings.HasPrefix(strings.TrimSpace(content), ">") {
-			idx = 0
-		} else {
-			return "", statuslineParts{}, false
+	lines := strings.Split(content, "\n")
+	statusLineIdx := -1
+	for i := len(lines) - 1; i >= 0; i-- {
+		if strings.HasPrefix(strings.TrimSpace(lines[i]), ">") {
+			statusLineIdx = i
+			break
 		}
 	}
+	if statusLineIdx < 0 {
+		return "", statuslineParts{}, false
+	}
 
-	reply = strings.TrimSpace(content[:idx])
-	footer := strings.TrimSpace(content[idx:])
+	reply = strings.TrimSpace(strings.Join(lines[:statusLineIdx], "\n"))
+	footer := strings.TrimSpace(lines[statusLineIdx])
 	footer = strings.TrimSpace(strings.TrimPrefix(footer, ">"))
 	status, ok = parseStatuslineFooter(footer)
 	if !ok {
@@ -2568,48 +2577,20 @@ func splitStatuslineFooter(content string) (reply string, status statuslineParts
 }
 
 func parseStatuslineFooter(footer string) (statuslineParts, bool) {
-	const (
-		sparkles = "\u2728"
-		money    = "\U0001f4b2"
-		reset    = "\U0001f504"
-		laptop   = "\U0001f4bb"
-	)
-	footer = strings.TrimSpace(strings.Trim(footer, sparkles+" "))
-	resetIdx := strings.Index(footer, reset)
-	if resetIdx < 0 {
+	footer = strings.TrimSpace(footer)
+	usageMatch := statuslineUsagePattern.FindStringSubmatch(footer)
+	remainingMatch := statuslineRemainingPattern.FindStringSubmatch(footer)
+	if len(usageMatch) != 3 || len(remainingMatch) != 2 {
 		return statuslineParts{}, false
 	}
-	laptopIdx := strings.Index(footer, laptop)
-	if laptopIdx >= 0 && laptopIdx <= resetIdx {
-		return statuslineParts{}, false
-	}
-
-	usagePrefix := footer[:resetIdx]
-	usageStart := strings.Index(usagePrefix, money)
-	if usageStart < 0 {
-		usageStart = strings.Index(usagePrefix, "$")
-	}
-	if usageStart < 0 {
-		return statuslineParts{}, false
-	}
-	usage := strings.TrimSpace(usagePrefix[usageStart:])
-	usage = normalizeStatuslineUsageTag(usage)
-	remainingEnd := len(footer)
-	if laptopIdx >= 0 {
-		remainingEnd = laptopIdx
-	}
-	remaining := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(footer[resetIdx:remainingEnd]), reset))
 	model := ""
-	if laptopIdx >= 0 {
-		model = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(footer[laptopIdx:]), laptop))
-	}
-	if usage == "" || remaining == "" {
-		return statuslineParts{}, false
+	if modelMatch := statuslineModelPattern.FindStringSubmatch(footer); len(modelMatch) == 2 {
+		model = strings.TrimSpace(modelMatch[1])
 	}
 	return statuslineParts{
 		Model:     model,
-		Usage:     usage,
-		Remaining: remaining,
+		Usage:     "$" + usageMatch[1] + " / $" + usageMatch[2],
+		Remaining: remainingMatch[1],
 	}, true
 }
 
@@ -4425,6 +4406,19 @@ func buildRichCard(status core.CardStatus, _ string, steps []core.ToolStep, mark
 		"padding":          "4px 8px",
 		"elements":         panelElements,
 	}
+	var statuslineMap map[string]any
+	if !streaming {
+		if reply, statusline, ok := splitStatuslineFooter(markdown); ok {
+			markdown = reply
+			statuslineMap = map[string]any{
+				"tag":        "markdown",
+				"content":    buildStatuslineTagMarkdown(statusline),
+				"text_align": "left",
+				"text_size":  "normal",
+				"margin":     "0px 0px 0px 0px",
+			}
+		}
+	}
 	markdownMap := map[string]any{
 		"tag":     "markdown",
 		"content": preprocessFeishuMarkdown(markdown),
@@ -4454,6 +4448,9 @@ func buildRichCard(status core.CardStatus, _ string, steps []core.ToolStep, mark
 		elements = append(elements, panelMap, markdownMap)
 	} else {
 		elements = append(elements, markdownMap)
+	}
+	if statuslineMap != nil {
+		elements = append(elements, statuslineMap)
 	}
 	if footerMap != nil {
 		elements = append(elements, footerMap)

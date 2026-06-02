@@ -856,6 +856,34 @@ func TestBuildReplyContent_UsesInteractiveTagsForDollarStatuslineFooter(t *testi
 	}
 }
 
+func TestBuildRichCard_UsesInteractiveTagsForStatuslineFooter(t *testing.T) {
+	markdown := "agent answer\n> \u2728\u2764\ufe0f\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d\U0001f90d  $ 3.24 / $ 150  \U0001f50428d10h\u2728"
+	body := buildRichCard(core.CardStatusDone, "", nil, markdown, false, 0)
+	var card struct {
+		Body struct {
+			Elements []struct {
+				Content string `json:"content"`
+			} `json:"elements"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(body), &card); err != nil {
+		t.Fatalf("buildRichCard() body is not valid card JSON: %v\n%s", err, body)
+	}
+	if len(card.Body.Elements) != 2 {
+		t.Fatalf("buildRichCard() elements = %d, want 2: %s", len(card.Body.Elements), body)
+	}
+	if strings.Contains(card.Body.Elements[0].Content, ">") {
+		t.Fatalf("reply markdown should not contain statusline quote: %s", card.Body.Elements[0].Content)
+	}
+	statusline := card.Body.Elements[1].Content
+	if !strings.Contains(statusline, "<text_tag color='green'>$3.24 / $150</text_tag>") {
+		t.Fatalf("statusline missing usage tag: %s", statusline)
+	}
+	if !strings.Contains(statusline, "<text_tag color='purple'>28d10h</text_tag>") {
+		t.Fatalf("statusline missing remaining tag: %s", statusline)
+	}
+}
+
 func TestLark_ReconstructReplyCtx(t *testing.T) {
 	p, err := newPlatform("lark", lark.LarkBaseUrl, map[string]any{
 		"app_id": "cli_xxx", "app_secret": "secret", "enable_feishu_card": false,
