@@ -1,0 +1,39 @@
+name: Build statusline artifact
+
+on:
+  push:
+    branches:
+      - cc-connect-statusline-build
+  workflow_dispatch:
+
+jobs:
+  windows-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Format and test touched packages
+        run: |
+          gofmt -w cmd/cc-connect/main.go config/config.go core/engine.go core/engine_test.go core/interfaces.go core/streaming.go core/streaming_test.go platform/feishu/feishu.go platform/feishu/platform_test.go
+          go test ./config ./core ./platform/feishu -run 'TestProcessInteractiveEvents_(AppendsStatuslineFooterWhenConfigured|StatuslineFooterOmitsUnknownModel|StatuslineFooterOmitsUnknownModelName|SendsStructuredStatuslineWhenSupported|AppendsReplyFooterWhenEnabled)|TestStreamPreview_FinishStatuslineUpdatesPreviewInPlace|TestBuildReplyContent_UsesInteractiveTagsFor(StatuslineFooter|DollarStatuslineFooter)|TestBuildStructuredStatuslineCardJSON_UsesDataFields|TestBuildRichCard_UsesInteractiveTagsForStatuslineFooter'
+
+      - name: Build Windows executable
+        run: |
+          mkdir -p dist
+          BUILD_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -tags no_web -ldflags "-s -w -X main.version=v1.3.3-beta.4-statusline -X main.commit=${GITHUB_SHA::7} -X main.buildTime=${BUILD_TIME}" -o dist/cc-connect.exe ./cmd/cc-connect
+          sha256sum dist/cc-connect.exe > dist/checksums.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cc-connect-statusline-windows-amd64
+          path: |
+            dist/cc-connect.exe
+            dist/checksums.txt
