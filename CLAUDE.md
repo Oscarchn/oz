@@ -235,3 +235,160 @@ Available tags: `no_acp`, `no_claudecode`, `no_codex`, `no_cursor`, `no_gemini`,
 6. Optionally implement `AgentDoctorInfo` for `cc-connect doctor` support
 7. Add config example in `config.example.toml`
 8. Add unit tests
+
+---
+
+## Branch-Specific Feature: Statusline Footer
+
+> This branch (`cc-connect-statusline-build`) carries a feature on top of
+> upstream `cc-connect`: an optional **Claude-style quota/model footer**
+> appended to assistant replies. When editing this branch, keep the docs below
+> in sync with the implementation.
+
+### What it does
+
+Before delivering an assistant reply, the engine can fetch the user's quota
+from an external endpoint and render a footer (model name + USD usage +
+percent + reset-remaining). On platforms that support structured replies (e.g.
+Feishu), it renders as native interactive tags/cards; everywhere else it falls
+back to a flattened text suffix.
+
+### Configuration
+
+Add a `[statusline_footer]` block to `config.toml` (global), optionally
+overridden per project under `[projects.<name>.statusline_footer]`:
+
+```toml
+[statusline_footer]
+enabled    = true        # default false
+url        = "https://example.com/api/quota"
+token      = ""          # bearer / x-api-key value (or use token_env)
+token_env  = "QUOTA_TOKEN" # env var fallback when token is empty
+timeout_ms = 1500        # HTTP timeout, default 1500
+cache_secs = 30          # cache TTL, default 30
+```
+
+Project-level values are layered over the global block by
+`config.EffectiveStatuslineFooter(cfg, proj)` (only non-zero fields override).
+
+### Code map
+
+| Concern | Location |
+| ------- | -------- |
+| Config structs + merge | `config/config.go` (`StatuslineFooterConfig`, `EffectiveStatuslineFooter`) |
+| Wiring config → engine | `cmd/cc-connect/main.go` (`toCoreStatuslineFooterConfig` → `engine.SetStatuslineFooterConfig`) |
+| Engine cfg + fetch/cache | `core/engine.go` (`StatuslineFooterCfg`, `statuslineFooterData`, `fetchStatuslineQuota`, `formatStatuslineFooterText`) |
+| Structured render interfaces | `core/interfaces.go` (`StatuslineFooterData`, `StatuslineReplySender`, `StatuslineReplyUpdater`) |
+| In-place preview finalize | `core/streaming.go` (`finishStatusline`) |
+| Feishu native rendering | `platform/feishu/feishu.go` (`SendStatuslineReply`, `UpdateStatuslineReply`, `buildStructuredStatuslineCardJSON`, `splitStatuslineFooter`) |
+
+### Quota endpoint contract
+
+`GET <url>` with both `x-api-key: <token>` and `Authorization: Bearer <token>`
+headers (token resolved from `token`, else `token_env`). Expected JSON:
+
+```json
+{ "success": true,
+  "data": { "usedUsd": 1.23, "limitUsd": 20.0, "percent": 6, "resetAt": "2026-06-03T00:00:00Z" } }
+```
+
+Failures are non-fatal: the engine logs at `slog.Debug` and falls back to the
+last cached footer (or omits it). Keep this behavior — the footer must never
+block or fail a reply.
+
+---
+
+## Building via GitHub Workflows (CI/CD)
+
+All compilation is wired through GitHub Actions in `.github/workflows/`. There
+are two distinct Go pipelines — know which one you are touching:
+
+| Workflow | File | Trigger | Purpose |
+| -------- | ---- | ------- | ------- |
+| **CI** | `ci.yml` | push/PR to `main`, `release` published | Lint + full test matrix (the gate for upstream code) |
+| **Statusline artifact** | `build-statusline-artifact.yml` | push to `cc-connect-statusline-build`, `workflow_dispatch` | Cross-compile the Windows binary with the statusline feature |
+| Issue auto-reply | `issue-reply.yml` | issue events | Non-build automation |
+| Stale bot | `stale.yml` | schedule | Non-build automation |
+
+### Common build setup
+
+Every Go job uses the same toolchain bootstrap, so reproduce it locally the
+same way:
+
+- **Go version is pinned by `go.mod`** (currently `go 1.25.0`) via
+  `actions/setup-go@v5` with `go-version-file: go.mod` + module cache. Do not
+  hardcode a Go version in the workflow; bump `go.mod` instead.
+- The web UI (`web/`) is a pnpm project; `ci.yml` builds it (`pnpm install
+  --frozen-lockfile && pnpm build`) before Go steps because Go embeds the
+  built assets. The statusline artifact skips this by building with the
+  `no_web` tag (see below).
+
+### `build-statusline-artifact.yml` — the statusline Windows build
+
+This is the workflow to use/extend when the deliverable is the patched
+binary. It runs on every push to `cc-connect-statusline-build` (and can be run
+manually from the Actions tab via **Run workflow** / `workflow_dispatch`).
+Steps:
+
+1. **Checkout** + **setup-go** (from `go.mod`, cached).
+2. **Format & test only the touched packages** — `gofmt -w` the statusline
+   files, then `go test ./config ./core ./platform/feishu -run '<statusline
+   tests>'`. This is a fast gate, *not* the full suite. If you add statusline
+   tests, add their names to the `-run` regex so CI actually exercises them.
+3. **Build the Windows executable**:
+   ```bash
+   GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+     go build -tags no_web \
+     -ldflags "-s -w -X main.version=v1.3.3-beta.4-statusline \
+               -X main.commit=${GITHUB_SHA::7} \
+               -X main.buildTime=$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+     -o dist/cc-connect.exe ./cmd/cc-connect
+   sha256sum dist/cc-connect.exe > dist/checksums.txt
+   ```
+   - `-tags no_web` drops the embedded web UI so no pnpm/Node build is needed.
+   - `CGO_ENABLED=0` produces a static, cross-compiled binary.
+   - Version metadata is injected via `-ldflags -X main.version/commit/buildTime`.
+4. **Upload artifact** `cc-connect-statusline-windows-amd64` containing
+   `dist/cc-connect.exe` + `dist/checksums.txt`. Download it from the run's
+   **Artifacts** section on the Actions page.
+
+**Reproduce the artifact build locally** (identical to CI):
+
+```bash
+GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
+  go build -tags no_web -ldflags "-s -w" -o dist/cc-connect.exe ./cmd/cc-connect
+```
+
+To build other OS/arch targets, change `GOOS`/`GOARCH` (see `PLATFORMS` in the
+`Makefile`: linux/darwin/windows × amd64/arm64), or use `make build` /
+`make release`.
+
+### `ci.yml` — the correctness gate (runs on `main`)
+
+Sequential jobs (each `needs` the previous), so a failure short-circuits the
+rest:
+
+1. **lint** — builds web assets, runs `golangci-lint v2.11.4` (incrementally
+   via `--new-from-rev` against the base/previous commit so only *new* issues
+   fail), and `actionlint` on the workflow files.
+2. **unit-test** — `go mod download` + `go mod verify` (catches `go.sum`
+   drift), `go build ./...`, `go test ./... -race`, then coverage → Codecov.
+3. **smoke-test** — `go test -tags=smoke,no_web ./tests/e2e/...`.
+4. **regression-test** — `go test -tags=regression,no_web ./tests/e2e/...`.
+5. **performance-test** — `go test -bench=. -benchmem -tags=performance,no_web
+   ./tests/performance/...`.
+
+> Note: `ci.yml` is scoped to `main`. Pushes to
+> `cc-connect-statusline-build` only trigger the artifact build, **not** the
+> full CI gate — so run `go build ./...` and `go test ./...` locally before
+> pushing statusline changes.
+
+### Build-related conventions
+
+- **Never commit secrets** to workflows; pass tokens via repo
+  **Settings → Secrets and variables → Actions** and reference them as
+  `${{ secrets.NAME }}`.
+- Workflows are linted by `actionlint` in CI — keep YAML valid and quoted.
+- When adding a new test that the statusline artifact build should guard, add
+  it to the `-run` regex in `build-statusline-artifact.yml`; when adding broad
+  tests, they are picked up automatically by `ci.yml`'s `go test ./...`.
