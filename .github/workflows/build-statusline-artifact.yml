@@ -9,6 +9,8 @@ on:
 jobs:
   windows-amd64:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -35,5 +37,20 @@ jobs:
         with:
           name: cc-connect-statusline-windows-amd64
           path: |
+            dist/cc-connect.exe
+            dist/checksums.txt
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v1.3.3-beta.4-statusline
+          name: v1.3.3-beta.4-statusline
+          body: |
+            Automated build from cc-connect-statusline-build branch.
+            
+            Includes /show image support for Feishu.
+          draft: false
+          prerelease: true
+          files: |
             dist/cc-connect.exe
             dist/checksums.txt
