@@ -312,3 +312,26 @@ func minInt(a, b int) int {
 	}
 	return b
 }
+
+// imageMimeByExt returns the MIME type for common image extensions,
+// or an empty string if the extension is not a recognized image format.
+func imageMimeByExt(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".png":
+		return "image/png"
+	case ".jpg", ".jpeg":
+		return "image/jpeg"
+	case ".gif":
+		return "image/gif"
+	case ".webp":
+		return "image/webp"
+	case ".bmp":
+		return "image/bmp"
+	case ".svg":
+		return "image/svg+xml"
+	case ".ico":
+		return "image/x-icon"
+	default:
+		return ""
+	}
+}

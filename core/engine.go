@@ -6122,6 +6122,30 @@ func (e *Engine) cmdShow(p Platform, msg *Message, args []string) {
 		e.reply(p, msg.ReplyCtx, e.i18n.Tf(MsgShowParseError, rawRef))
 		return
 	}
+
+	// If the target is an image file and the platform supports sending images,
+	// send the image directly instead of rendering it as text.
+	if req.Ref != nil && req.Ref.kind == referenceKindFile {
+		if mime := imageMimeByExt(req.Ref.pathAbs); mime != "" {
+			if imageSender, ok := p.(ImageSender); ok {
+				imgData, err := os.ReadFile(req.Ref.pathAbs)
+				if err == nil {
+					if err := e.waitOutgoing(p); err != nil {
+						slog.Warn("outgoing rate limit", "platform", p.Name(), "error", err)
+					}
+					if err := imageSender.SendImage(e.ctx, msg.ReplyCtx, ImageAttachment{
+						MimeType: mime,
+						Data:     imgData,
+						FileName: filepath.Base(req.Ref.pathAbs),
+					}); err == nil {
+						return
+					}
+				}
+				// Fall through to text rendering on error
+			}
+		}
+	}
+
 	content, err := renderReferenceView(req)
 	if err != nil {
 		switch {
