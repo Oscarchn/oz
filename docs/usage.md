@@ -40,6 +40,7 @@ Each user gets an independent session with full conversation context. Manage ses
 | `/provider [...]` | Manage API providers |
 | `/model [switch <alias>]` | List available models or switch by alias |
 | `/dir [path]` | Show or switch the agent work directory |
+| `/tree [subdir]` | Browse subdirectories and files; tap 📁 to drill in, 📄 to view (Feishu cards) |
 | `/allow <tool>` | Pre-allow a tool (next session) |
 | `/reasoning [level]` | View or switch reasoning effort (Codex) |
 | `/mode [name]` | View or switch permission mode |

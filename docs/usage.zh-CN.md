@@ -41,6 +41,7 @@ cc-connect 完整功能使用指南。
 | `/provider [...]` | 管理 API Provider |
 | `/model [switch <alias>]` | 列出可用模型或按别名切换 |
 | `/dir [路径]` | 查看或切换 Agent 工作目录 |
+| `/tree [子目录]` | 浏览子目录与文件；点 📁 进入下一层，点 📄 查看文件（飞书卡片） |
 | `/show <引用>` | 按引用查看文件、目录或代码片段 |
 | `/allow <工具名>` | 预授权工具 |
 | `/reasoning [等级]` | 查看或切换推理强度（Codex）|

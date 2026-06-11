@@ -574,6 +574,26 @@ const (
 	MsgDirCardEmptyHistory MsgKey = "dir_card_empty_history"
 	MsgDirCardReset        MsgKey = "dir_card_reset"
 	MsgDirCardPrev         MsgKey = "dir_card_prev"
+
+	// Directory browser (/tree) messages
+	MsgTree             MsgKey = "tree"
+	MsgTreeUsage        MsgKey = "tree_usage"
+	MsgTreeCardTitle    MsgKey = "tree_card_title"
+	MsgTreeCurrent      MsgKey = "tree_current"
+	MsgTreeRootLabel    MsgKey = "tree_root_label"
+	MsgTreeEmpty        MsgKey = "tree_empty"
+	MsgTreeParent       MsgKey = "tree_parent"
+	MsgTreeOpen         MsgKey = "tree_open"
+	MsgTreeView         MsgKey = "tree_view"
+	MsgTreeNotDir       MsgKey = "tree_not_dir"
+	MsgTreeNotFound     MsgKey = "tree_not_found"
+	MsgTreeEscape       MsgKey = "tree_escape"
+	MsgTreeReadFailed   MsgKey = "tree_read_failed"
+	MsgTreeCounts       MsgKey = "tree_counts"
+	MsgTreePageHint     MsgKey = "tree_page_hint"
+	MsgTreeDirsSection  MsgKey = "tree_dirs_section"
+	MsgTreeFilesSection MsgKey = "tree_files_section"
+
 	MsgShow                MsgKey = "show"
 	MsgShowUsage           MsgKey = "show_usage"
 	MsgShowParseError      MsgKey = "show_parse_error"
@@ -3676,6 +3696,125 @@ var messages = map[MsgKey]map[Language]string{
 		LangTraditionalChinese: "上一目錄",
 		LangJapanese:           "前へ",
 		LangSpanish:            "Anterior",
+	},
+	MsgTree: {
+		LangEnglish:            "Browse working-directory subdirectories and files",
+		LangChinese:            "浏览工作目录下的子目录与文件",
+		LangTraditionalChinese: "瀏覽工作目錄下的子目錄與檔案",
+		LangJapanese:           "作業ディレクトリのサブディレクトリとファイルを閲覧",
+		LangSpanish:            "Explorar subdirectorios y archivos del directorio de trabajo",
+	},
+	MsgTreeUsage: {
+		LangEnglish:            "Usage: `/tree [subdir]` — list subdirectories and files. Tap a 📁 to drill in, or a 📄 to view it.\nExample: `/tree core/agent`",
+		LangChinese:            "用法: `/tree [子目录]` — 列出子目录与文件。点 📁 进入下一层，点 📄 查看文件。\n示例: `/tree core/agent`",
+		LangTraditionalChinese: "用法: `/tree [子目錄]` — 列出子目錄與檔案。點 📁 進入下一層，點 📄 檢視檔案。\n範例: `/tree core/agent`",
+		LangJapanese:           "使い方: `/tree [サブディレクトリ]` — サブディレクトリとファイルを一覧。📁 で深掘り、📄 で表示。\n例: `/tree core/agent`",
+		LangSpanish:            "Uso: `/tree [subdir]` — lista subdirectorios y archivos. Toca 📁 para entrar o 📄 para verlo.\nEjemplo: `/tree core/agent`",
+	},
+	MsgTreeCardTitle: {
+		LangEnglish:            "📁 Directory browser",
+		LangChinese:            "📁 目录浏览",
+		LangTraditionalChinese: "📁 目錄瀏覽",
+		LangJapanese:           "📁 ディレクトリ閲覧",
+		LangSpanish:            "📁 Explorador de directorios",
+	},
+	MsgTreeCurrent: {
+		LangEnglish:            "📂 `%s`",
+		LangChinese:            "📂 `%s`",
+		LangTraditionalChinese: "📂 `%s`",
+		LangJapanese:           "📂 `%s`",
+		LangSpanish:            "📂 `%s`",
+	},
+	MsgTreeRootLabel: {
+		LangEnglish:            "(working directory root)",
+		LangChinese:            "（工作目录根）",
+		LangTraditionalChinese: "（工作目錄根）",
+		LangJapanese:           "（作業ディレクトリのルート）",
+		LangSpanish:            "(raíz del directorio de trabajo)",
+	},
+	MsgTreeEmpty: {
+		LangEnglish:            "This directory has no visible subdirectories or files.",
+		LangChinese:            "该目录下没有可见的子目录或文件。",
+		LangTraditionalChinese: "該目錄下沒有可見的子目錄或檔案。",
+		LangJapanese:           "このディレクトリに表示可能なサブディレクトリやファイルはありません。",
+		LangSpanish:            "Este directorio no tiene subdirectorios ni archivos visibles.",
+	},
+	MsgTreeParent: {
+		LangEnglish:            "⬆️ Parent",
+		LangChinese:            "⬆️ 上级",
+		LangTraditionalChinese: "⬆️ 上層",
+		LangJapanese:           "⬆️ 上へ",
+		LangSpanish:            "⬆️ Subir",
+	},
+	MsgTreeOpen: {
+		LangEnglish:            "Open",
+		LangChinese:            "打开",
+		LangTraditionalChinese: "開啟",
+		LangJapanese:           "開く",
+		LangSpanish:            "Abrir",
+	},
+	MsgTreeView: {
+		LangEnglish:            "View",
+		LangChinese:            "查看",
+		LangTraditionalChinese: "檢視",
+		LangJapanese:           "表示",
+		LangSpanish:            "Ver",
+	},
+	MsgTreeNotDir: {
+		LangEnglish:            "❌ Not a directory: `%s`",
+		LangChinese:            "❌ 不是目录: `%s`",
+		LangTraditionalChinese: "❌ 不是目錄: `%s`",
+		LangJapanese:           "❌ ディレクトリではありません: `%s`",
+		LangSpanish:            "❌ No es un directorio: `%s`",
+	},
+	MsgTreeNotFound: {
+		LangEnglish:            "❌ Path not found: `%s`",
+		LangChinese:            "❌ 路径不存在: `%s`",
+		LangTraditionalChinese: "❌ 路徑不存在: `%s`",
+		LangJapanese:           "❌ パスが見つかりません: `%s`",
+		LangSpanish:            "❌ Ruta no encontrada: `%s`",
+	},
+	MsgTreeEscape: {
+		LangEnglish:            "❌ Path is outside the working directory.",
+		LangChinese:            "❌ 路径超出了工作目录范围。",
+		LangTraditionalChinese: "❌ 路徑超出了工作目錄範圍。",
+		LangJapanese:           "❌ パスが作業ディレクトリの外です。",
+		LangSpanish:            "❌ La ruta está fuera del directorio de trabajo.",
+	},
+	MsgTreeReadFailed: {
+		LangEnglish:            "❌ Failed to read directory: %v",
+		LangChinese:            "❌ 读取目录失败: %v",
+		LangTraditionalChinese: "❌ 讀取目錄失敗: %v",
+		LangJapanese:           "❌ ディレクトリの読み取りに失敗: %v",
+		LangSpanish:            "❌ Error al leer el directorio: %v",
+	},
+	MsgTreeCounts: {
+		LangEnglish:            "%d subdirectories · %d files",
+		LangChinese:            "%d 个子目录 · %d 个文件",
+		LangTraditionalChinese: "%d 個子目錄 · %d 個檔案",
+		LangJapanese:           "サブディレクトリ %d · ファイル %d",
+		LangSpanish:            "%d subdirectorios · %d archivos",
+	},
+	MsgTreePageHint: {
+		LangEnglish:            "Page %d/%d — `/tree <path>` or use the buttons below.",
+		LangChinese:            "第 %d/%d 页 — 可用 `/tree <路径>` 或下方按钮翻页。",
+		LangTraditionalChinese: "第 %d/%d 頁 — 可用 `/tree <路徑>` 或下方按鈕翻頁。",
+		LangJapanese:           "%d/%d ページ — `/tree <パス>` または下のボタンで移動。",
+		LangSpanish:            "Página %d/%d — usa `/tree <ruta>` o los botones de abajo.",
+	},
+	MsgTreeDirsSection: {
+		LangEnglish:            "**Subdirectories**",
+		LangChinese:            "**子目录**",
+		LangTraditionalChinese: "**子目錄**",
+		LangJapanese:           "**サブディレクトリ**",
+		LangSpanish:            "**Subdirectorios**",
+	},
+	MsgTreeFilesSection: {
+		LangEnglish:            "**Files**",
+		LangChinese:            "**文件**",
+		LangTraditionalChinese: "**檔案**",
+		LangJapanese:           "**ファイル**",
+		LangSpanish:            "**Archivos**",
 	},
 	MsgShow: {
 		LangEnglish:            "View file / directory / snippet by reference",

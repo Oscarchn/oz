@@ -79,12 +79,12 @@ type replyFooterUsageCache struct {
 // StatuslineFooterCfg controls an optional Claude-style quota/model footer
 // fetched from an external quota endpoint before sending assistant replies.
 type StatuslineFooterCfg struct {
-	Enabled   bool
-	URL       string
-	Token     string
-	TokenEnv  string
-	Timeout   time.Duration
-	CacheTTL  time.Duration
+	Enabled  bool
+	URL      string
+	Token    string
+	TokenEnv string
+	Timeout  time.Duration
+	CacheTTL time.Duration
 }
 
 type statuslineFooterCache struct {
@@ -662,7 +662,6 @@ func (e *Engine) SetWebStatusFunc(fn func() string)                    { e.webSt
 func (e *Engine) SetSkipGit(skipGit bool) {
 	e.skipGit = skipGit
 }
-
 
 // SetInjectSender controls whether sender identity (platform and user ID) is
 // prepended to each message before forwarding it to the agent. When enabled,
@@ -3664,7 +3663,7 @@ func (e *Engine) processInteractiveEvents(state *interactiveState, session *Sess
 			state.markStopped()
 			gracePeriod := 10 * time.Second
 			graceTimer := time.NewTimer(gracePeriod)
-			graceLoop:
+		graceLoop:
 			for {
 				select {
 				case evt, ok := <-state.agentSession.Events():
@@ -4836,6 +4835,7 @@ var builtinCommands = []struct {
 	{[]string{"shell", "sh", "exec", "run"}, "shell"},
 	{[]string{"show"}, "show"},
 	{[]string{"dir", "cd", "chdir", "workdir"}, "dir"},
+	{[]string{"tree", "browse"}, "tree"},
 	{[]string{"tts"}, "tts"},
 	{[]string{"workspace", "ws"}, "workspace"},
 	{[]string{"whoami", "myid"}, "whoami"},
@@ -5042,6 +5042,8 @@ func (e *Engine) handleCommand(p Platform, msg *Message, raw string) bool {
 		e.cmdShow(p, msg, args)
 	case "dir":
 		e.cmdDir(p, msg, args)
+	case "tree":
+		e.cmdTree(p, msg, args)
 	case "tts":
 		e.cmdTTS(p, msg, args)
 	case "workspace":
@@ -7676,6 +7678,7 @@ func helpCardGroups() []helpCardGroup {
 			items: []helpCardItem{
 				{command: "/shell", action: "cmd:/shell"},
 				{command: "/show", action: "cmd:/show"},
+				{command: "/tree", action: "nav:/tree"},
 				{command: "/cron", action: "nav:/cron"},
 				{command: "/heartbeat", action: "nav:/heartbeat"},
 				{command: "/commands", action: "nav:/commands"},
@@ -9805,6 +9808,9 @@ func (e *Engine) handleCardNav(action string, sessionKey string) *Card {
 			}
 		}
 		return e.renderDirCardSafe(sessionKey, page)
+	case "/tree":
+		relPath, page := decodeTreeNav(args)
+		return e.renderTreeCardSafe(sessionKey, relPath, page)
 	case "/current":
 		return e.renderCurrentCard(sessionKey)
 	case "/history":
